@@ -9,3 +9,13 @@
 - 建立 `docs/FEATURES.md`，逐功能記錄參數、預設值、業務規則、錯誤碼與非標準機制（dual-mode auth）。
 - 建立 `docs/TESTING.md`，整理測試檔案、執行順序、依賴、helper、新增測試步驟與陷阱。
 - 建立 `docs/plans/` 與 `docs/plans/archive/` 目錄作為計畫管理基礎結構。
+
+### Changed
+- 串接 ECPay 付款流程：新增訂單付款發起（`/api/orders/:id/payment/start`）與主動查詢驗證（`/api/orders/:id/payment/verify`）。
+- 因本地端無法接收可公開回打的 Server Notify，付款確認改為由本地端主動呼叫 ECPay `QueryTradeInfo/V5`。
+- 調整訂單頁行為：改為「前往綠界付款」與「確認付款狀態」按鈕流程。
+- 訂單資料結構擴充付款欄位（`payment_provider`, `merchant_trade_no`, `payment_method`, `paid_at`, `payment_raw`）與 `merchant_trade_no` 唯一索引。
+
+### Fixed
+- 修正綠界錯誤 `10300028`（訂單編號重覆）：
+  - 同一筆 `pending` 訂單重試付款時，`payment/start` 每次都重新產生並保存新的 `MerchantTradeNo`，避免重覆送單失敗。

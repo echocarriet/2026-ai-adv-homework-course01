@@ -2,6 +2,13 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../database');
 const authMiddleware = require('../middleware/authMiddleware');
+const {
+  buildCreatePaymentFields,
+  buildItemName,
+  generateMerchantTradeNo,
+  getCheckoutActionUrl,
+  queryTradeInfo,
+} = require('../services/ecpayService');
 
 const router = express.Router();
 
@@ -12,6 +19,26 @@ function generateOrderNo() {
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
   const random = uuidv4().slice(0, 5).toUpperCase();
   return `ORD-${dateStr}-${random}`;
+}
+
+function getBaseUrl(req) {
+  return process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+}
+
+function loadOrderWithItems(id, userId) {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?').get(id, userId);
+  if (!order) return null;
+  const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
+  return { ...order, items };
+}
+
+function allocateMerchantTradeNo() {
+  for (let i = 0; i < 10; i += 1) {
+    const no = generateMerchantTradeNo();
+    const existed = db.prepare('SELECT id FROM orders WHERE merchant_trade_no = ? LIMIT 1').get(no);
+    if (!existed) return no;
+  }
+  throw new Error('無法產生唯一 MerchantTradeNo，請稍後再試');
 }
 
 /**
@@ -133,13 +160,15 @@ router.post('/', (req, res) => {
 
   const orderId = uuidv4();
   const orderNo = generateOrderNo();
+  const merchantTradeNo = generateMerchantTradeNo();
 
   // Transaction: create order, order items, deduct stock, clear cart
   const createOrder = db.transaction(() => {
     db.prepare(
-      `INSERT INTO orders (id, order_no, user_id, recipient_name, recipient_email, recipient_address, total_amount)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(orderId, orderNo, userId, recipientName, recipientEmail, recipientAddress, totalAmount);
+      `INSERT INTO orders
+       (id, order_no, user_id, recipient_name, recipient_email, recipient_address, total_amount, payment_provider, merchant_trade_no)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(orderId, orderNo, userId, recipientName, recipientEmail, recipientAddress, totalAmount, 'ecpay', merchantTradeNo);
 
     const insertItem = db.prepare(
       `INSERT INTO order_items (id, order_id, product_id, product_name, product_price, quantity)
@@ -306,6 +335,123 @@ router.get('/:id', (req, res) => {
     data: { ...order, items },
     error: null,
     message: '成功'
+  });
+});
+
+router.post('/:id/payment/start', (req, res) => {
+  const order = loadOrderWithItems(req.params.id, req.user.userId);
+  if (!order) {
+    return res.status(404).json({ data: null, error: 'NOT_FOUND', message: '訂單不存在' });
+  }
+  if (order.status !== 'pending') {
+    return res.status(400).json({
+      data: null,
+      error: 'INVALID_STATUS',
+      message: '訂單狀態不是 pending，無法發起付款'
+    });
+  }
+
+  const baseUrl = getBaseUrl(req);
+  const returnUrl = `${baseUrl}/api/payments/ecpay/notify`;
+  const clientBackUrl = `${baseUrl}/orders/${order.id}`;
+  const itemName = buildItemName(order.items);
+  let merchantTradeNo;
+
+  try {
+    // 每次重新發起付款都產生新的交易編號，避免綠界回覆 10300028 重覆訂單編號
+    merchantTradeNo = allocateMerchantTradeNo();
+    db.prepare('UPDATE orders SET merchant_trade_no = ?, payment_provider = ? WHERE id = ?')
+      .run(merchantTradeNo, 'ecpay', order.id);
+  } catch (err) {
+    return res.status(500).json({ data: null, error: 'TRADE_NO_ALLOCATE_FAILED', message: err.message });
+  }
+
+  let fields;
+  try {
+    fields = buildCreatePaymentFields({
+      merchantTradeNo,
+      totalAmount: order.total_amount,
+      tradeDesc: `Order ${order.order_no}`,
+      itemName,
+      returnUrl,
+      clientBackUrl,
+    });
+  } catch (err) {
+    return res.status(500).json({ data: null, error: 'ECPAY_CONFIG_ERROR', message: err.message });
+  }
+
+  res.json({
+    data: {
+      action: getCheckoutActionUrl(),
+      method: 'POST',
+      fields,
+    },
+    error: null,
+    message: '成功'
+  });
+});
+
+router.post('/:id/payment/verify', async (req, res) => {
+  const order = loadOrderWithItems(req.params.id, req.user.userId);
+  if (!order) {
+    return res.status(404).json({ data: null, error: 'NOT_FOUND', message: '訂單不存在' });
+  }
+  if (!order.merchant_trade_no) {
+    return res.status(400).json({
+      data: null,
+      error: 'PAYMENT_NOT_STARTED',
+      message: '尚未發起付款'
+    });
+  }
+
+  let queryResult;
+  try {
+    queryResult = await queryTradeInfo(order.merchant_trade_no);
+  } catch (_err) {
+    return res.status(502).json({
+      data: null,
+      error: 'ECPAY_QUERY_FAILED',
+      message: '查詢綠界付款狀態失敗'
+    });
+  }
+
+  const parsed = queryResult.parsed;
+  const tradeStatus = parsed.TradeStatus;
+  const paymentDate = parsed.PaymentDate || null;
+  const paymentType = parsed.PaymentType || null;
+
+  if (tradeStatus === '1' && order.status === 'pending') {
+    db.prepare(
+      `UPDATE orders
+       SET status = 'paid',
+           paid_at = ?,
+           payment_method = ?,
+           payment_raw = ?
+       WHERE id = ?`
+    ).run(paymentDate, paymentType, queryResult.raw, order.id);
+  } else {
+    db.prepare(
+      `UPDATE orders
+       SET payment_method = COALESCE(?, payment_method),
+           payment_raw = ?
+       WHERE id = ?`
+    ).run(paymentType, queryResult.raw, order.id);
+  }
+
+  const updated = loadOrderWithItems(order.id, req.user.userId);
+  res.json({
+    data: {
+      order: updated,
+      payment: {
+        tradeStatus,
+        paymentType,
+        paymentDate,
+        rtnCode: parsed.RtnCode || null,
+        rtnMsg: parsed.RtnMsg || null,
+      }
+    },
+    error: null,
+    message: tradeStatus === '1' ? '付款已確認' : '目前尚未付款成功'
   });
 });
 

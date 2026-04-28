@@ -34,6 +34,8 @@
 - `routes/productRoutes.js`：前台商品列表/詳情。
 - `routes/cartRoutes.js`：購物車（JWT / Session dual-mode）。
 - `routes/orderRoutes.js`：訂單建立/列表/詳情/模擬付款。
+- `routes/paymentRoutes.js`：ECPay callback 接收端（本地端回 `1|OK`）。
+- `services/ecpayService.js`：ECPay 欄位簽章、付款欄位組裝、交易查詢 API 封裝。
 - `routes/adminProductRoutes.js`：後台商品 CRUD。
 - `routes/adminOrderRoutes.js`：後台訂單查詢。
 - `routes/pageRoutes.js`：前後台 EJS 頁面路由。
@@ -65,6 +67,7 @@
 | `/api/products` | `src/routes/productRoutes.js` | 無 | 前台商品查詢 |
 | `/api/cart` | `src/routes/cartRoutes.js` | JWT 或 `X-Session-Id` | 訪客/會員購物車 |
 | `/api/orders` | `src/routes/orderRoutes.js` | JWT | 下單、查訂單、模擬付款 |
+| `/api/payments` | `src/routes/paymentRoutes.js` | 無（ECPay 呼叫） | 金流 callback 入口（本地端 no-op ACK） |
 | `/api/admin/products` | `src/routes/adminProductRoutes.js` | JWT + admin | 後台商品管理 |
 | `/api/admin/orders` | `src/routes/adminOrderRoutes.js` | JWT + admin | 後台訂單查詢 |
 
@@ -134,6 +137,22 @@
 3. update `products.stock = stock - quantity`
 4. delete `cart_items where user_id`
 
+### 綠界付款（本地主動查詢模式）
+1. 使用者在訂單頁點「前往綠界付款」。
+2. 前端呼叫 `POST /api/orders/:id/payment/start`。
+3. 後端先為該筆 `pending` 訂單配置新的 `merchant_trade_no`（每次重試都換新，避免 10300028）。
+4. 後端組裝 ECPay AIO 欄位並回傳 `{ action, method, fields }`。
+5. 前端建立 form POST 到 `https://payment(-stage).ecpay.com.tw/Cashier/AioCheckOut/V5`。
+6. 使用者付款後回到商店頁，前端點「確認付款狀態」呼叫 `POST /api/orders/:id/payment/verify`。
+7. 後端主動呼叫 ECPay `QueryTradeInfo/V5`：
+   - `TradeStatus === 1`：更新訂單為 `paid`
+   - 否則：保留 `pending`，僅更新查詢紀錄欄位
+
+### ECPay Server Notify（本地限制）
+- 因本專案僅本地運行，無法讓綠界直接回打可公開存取的伺服器。
+- `POST /api/payments/ecpay/notify` 目前僅回應 `1|OK`（no-op），不作為最終付款狀態依據。
+- 最終狀態以主動查詢 `QueryTradeInfo/V5` 結果為準。
+
 ### 後台管理
 前端 admin 頁在 layout 即先 `Auth.requireAdmin()`；後端路由再由 middleware 強制驗證，避免僅靠前端守衛。
 
@@ -181,6 +200,11 @@
 | `recipient_address` | TEXT | NOT NULL |
 | `total_amount` | INTEGER | NOT NULL |
 | `status` | TEXT | NOT NULL default `pending`, check in (`pending`,`paid`,`failed`) |
+| `payment_provider` | TEXT | nullable（目前使用 `ecpay`） |
+| `merchant_trade_no` | TEXT | UNIQUE（`idx_orders_merchant_trade_no`） |
+| `payment_method` | TEXT | nullable（例：Credit_CreditCard） |
+| `paid_at` | TEXT | nullable（由綠界回傳付款時間） |
+| `payment_raw` | TEXT | nullable（保存查詢原始回應） |
 | `created_at` | TEXT | NOT NULL default now |
 
 ### `order_items`
@@ -193,13 +217,14 @@
 | `product_price` | INTEGER | NOT NULL（快照） |
 | `quantity` | INTEGER | NOT NULL |
 
-## 第三方/金流整合狀態
-目前程式碼中**尚未實作實際 ECPay 呼叫流程**：
-- `.env.example` 含 ECPay 相關參數（`ECPAY_*`），但 `src/routes` 與 `public/js` 無使用。
-- 現行付款為 `PATCH /api/orders/:id/pay` 的「模擬付款」：`action=success|fail` 直接改訂單狀態。
-
-若要接入真實金流，應至少補：
-1. 訂單建立後導向第三方付款頁流程
-2. callback/webhook 驗證與簽章校驗
-3. 付款狀態 idempotency 保證
-4. 訂單狀態流轉規則與重試策略
+## 第三方/金流整合（ECPay）
+- 付款導向：`AioCheckOut/V5`
+- 主動查詢：`QueryTradeInfo/V5`
+- 簽章：`CheckMacValue`（SHA256 + ECPay 特定 URL encode 規則）
+- 環境切換：
+  - `ECPAY_ENV=staging` -> `https://payment-stage.ecpay.com.tw`
+  - `ECPAY_ENV=production` -> `https://payment.ecpay.com.tw`
+- 本地運行限制下的關鍵決策：
+  - 不依賴 Server Notify 做最終狀態更新
+  - 以使用者操作觸發 `payment/verify` 主動查詢做為付款確認流程
+  - 每次重試付款必換 `MerchantTradeNo`，避免重複編號錯誤 `10300028`

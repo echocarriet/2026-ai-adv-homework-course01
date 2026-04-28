@@ -68,9 +68,34 @@ function initializeDatabase() {
     );
   `);
 
+  ensureOrderPaymentColumns();
+
   // Seed data
   seedAdminUser();
   seedProducts();
+}
+
+function ensureOrderPaymentColumns() {
+  const columns = db.prepare("PRAGMA table_info(orders)").all();
+  const existing = new Set(columns.map((c) => c.name));
+
+  if (!existing.has('payment_provider')) {
+    db.exec("ALTER TABLE orders ADD COLUMN payment_provider TEXT");
+  }
+  if (!existing.has('merchant_trade_no')) {
+    db.exec("ALTER TABLE orders ADD COLUMN merchant_trade_no TEXT");
+  }
+  if (!existing.has('payment_method')) {
+    db.exec("ALTER TABLE orders ADD COLUMN payment_method TEXT");
+  }
+  if (!existing.has('paid_at')) {
+    db.exec("ALTER TABLE orders ADD COLUMN paid_at TEXT");
+  }
+  if (!existing.has('payment_raw')) {
+    db.exec("ALTER TABLE orders ADD COLUMN payment_raw TEXT");
+  }
+
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_merchant_trade_no ON orders(merchant_trade_no)");
 }
 
 function seedAdminUser() {

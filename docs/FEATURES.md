@@ -185,6 +185,49 @@
 - `apiFetch` 一旦收到 401 會清空 localStorage token/user 並導向 `/login`。
 - `Auth.getAuthHeaders()` 永遠送 `X-Session-Id`，已登入時再加 `Authorization`，配合後端 dual-mode。
 
-## 8. 金流整合（Partial）
-- `.env.example` 有 ECPay 參數，但程式未呼叫第三方 API。
-- 目前僅模擬付款 API，尚無 callback 驗證流程。
+## 8. 金流整合（Completed）
+
+### 8.1 發起綠界付款
+- Endpoint: `POST /api/orders/:id/payment/start`
+- 認證：JWT 必須
+- Path 必填：`id`（訂單 id）
+- Query：無
+- Body：無
+- 業務邏輯：
+  - 僅允許訂單擁有者操作（`id + user_id` 同時匹配）
+  - 僅允許 `pending` 訂單發起付款
+  - 每次發起付款都會重新配置新的 `MerchantTradeNo`
+  - 新 `MerchantTradeNo` 會先寫回 `orders.merchant_trade_no`，再簽章產出 ECPay 表單欄位
+  - 回傳 `{ action, method, fields }` 供前端建立自動提交表單導向綠界
+- 非標準機制（重試防重複編號）：
+  - 為避免綠界錯誤 `10300028`（訂單編號重覆），同一筆 `pending` 訂單每次重試都不重用舊交易編號
+  - 後端會在本地檢查 `merchant_trade_no` 不可與既有訂單重複（DB 亦有 unique index）
+- 錯誤碼與情境：
+  - `404 NOT_FOUND`：訂單不存在或非本人訂單
+  - `400 INVALID_STATUS`：訂單不是 `pending`
+  - `500 TRADE_NO_ALLOCATE_FAILED`：交易編號配置失敗
+  - `500 ECPAY_CONFIG_ERROR`：ECPay 環境變數設定不完整
+
+### 8.2 主動查詢付款結果（本地端無 Server Notify）
+- Endpoint: `POST /api/orders/:id/payment/verify`
+- 認證：JWT 必須
+- Path 必填：`id`
+- Query：無
+- Body：無
+- 業務邏輯：
+  - 後端以 `orders.merchant_trade_no` 呼叫 ECPay `QueryTradeInfo/V5`
+  - 若 `TradeStatus === '1'` 且訂單仍是 `pending`：
+    - 更新 `orders.status = 'paid'`
+    - 寫入 `paid_at`, `payment_method`, `payment_raw`
+  - 若尚未成功付款：
+    - 保留原訂單狀態
+    - 更新查詢回傳資料（例如 `payment_method`, `payment_raw`）以利追蹤
+- 錯誤碼與情境：
+  - `404 NOT_FOUND`：訂單不存在或非本人訂單
+  - `400 PAYMENT_NOT_STARTED`：尚未發起付款（無 `merchant_trade_no`）
+  - `502 ECPAY_QUERY_FAILED`：查詢綠界失敗（網路或上游錯誤）
+
+### 8.3 模擬付款（開發輔助）
+- Endpoint: `PATCH /api/orders/:id/pay`
+- Body 必填：`action`（`success` 或 `fail`）
+- 用途：保留給開發/測試流程，正式付款流程以綠界 `start + verify` 為主。
