@@ -13,6 +13,7 @@
 | `tests/products.test.js` | 商品列表/詳情 | seed 商品 |
 | `tests/cart.test.js` | 訪客與會員購物車 | products API |
 | `tests/orders.test.js` | 訂單建立/查詢 | cart + auth |
+| `tests/ordersPayment.test.js` | ECPay 付款發起/主動查詢驗證 | orders + ECPay env |
 | `tests/adminProducts.test.js` | 後台商品 CRUD | admin token |
 | `tests/adminOrders.test.js` | 後台訂單查詢 | 先建立一般用戶訂單 |
 
@@ -22,12 +23,14 @@
 2. `products.test.js`
 3. `cart.test.js`
 4. `orders.test.js`
-5. `adminProducts.test.js`
-6. `adminOrders.test.js`
+5. `ordersPayment.test.js`
+6. `adminProducts.test.js`
+7. `adminOrders.test.js`
 
 理由：
 - 後段測試會依賴前面已驗證之核心流程（例如先有商品/購物車，才有訂單）。
 - DB 為共享 SQLite，順序固定可提高重現性。
+- 付款驗證測試需建立訂單後才能執行，故 `ordersPayment.test.js` 放在 `orders.test.js` 之後。
 
 ## 輔助函式說明（`tests/setup.js`）
 - `getAdminToken()`
@@ -69,6 +72,7 @@ it('should reject invalid quantity', async () => {
   - 若同時送壞掉 token + session id，後端會直接 401。
   - 不要誤以為會 fallback session。
 - 訂單付款狀態：只有 `pending` 可付款，重複付款要驗證 `INVALID_STATUS`。
+- ECPay 查單測試：`ordersPayment.test.js` 會 mock `global.fetch`，新增同類測試時記得在案例結束後還原 `global.fetch`。
 
 ## 執行指令
 ```bash

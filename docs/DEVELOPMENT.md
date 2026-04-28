@@ -49,13 +49,13 @@
 | `JWT_SECRET` | JWT 簽章與驗證 | 必填（`server.js` 啟動檢查） | 無 |
 | `PORT` | server 監聽埠 | 選填 | `3001` |
 | `FRONTEND_URL` | CORS `origin` | 選填 | `http://localhost:3001`（程式 fallback） |
-| `BASE_URL` | 目前未被程式直接讀取（保留） | 選填 | `http://localhost:3001` |
+| `BASE_URL` | 組合 ECPay `ReturnURL` 與 `ClientBackURL` 的站台位址 | 選填 | `http://localhost:3001` |
 | `ADMIN_EMAIL` | seed 管理員帳號 | 選填 | `admin@hexschool.com` |
 | `ADMIN_PASSWORD` | seed 管理員密碼 | 選填 | `12345678` |
-| `ECPAY_MERCHANT_ID` | ECPay 參數（尚未接線） | 選填 | `.env.example` 提供 |
-| `ECPAY_HASH_KEY` | ECPay 參數（尚未接線） | 選填 | `.env.example` 提供 |
-| `ECPAY_HASH_IV` | ECPay 參數（尚未接線） | 選填 | `.env.example` 提供 |
-| `ECPAY_ENV` | ECPay 環境（尚未接線） | 選填 | `staging` |
+| `ECPAY_MERCHANT_ID` | ECPay 商店代號（AIO 建單與查單都會使用） | 必填（啟用付款流程時） | 無 |
+| `ECPAY_HASH_KEY` | ECPay 簽章 HashKey（`CheckMacValue` 計算） | 必填（啟用付款流程時） | 無 |
+| `ECPAY_HASH_IV` | ECPay 簽章 HashIV（`CheckMacValue` 計算） | 必填（啟用付款流程時） | 無 |
+| `ECPAY_ENV` | ECPay 環境切換（`staging`/`production`） | 選填 | `staging` |
 | `NODE_ENV` | 控制 seed bcrypt round（test=1） | 選填 | 依 runtime |
 
 ## JSDoc / OpenAPI 格式說明

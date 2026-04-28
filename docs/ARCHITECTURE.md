@@ -60,16 +60,29 @@
 - `setup.js`：測試工具（`getAdminToken`, `registerUser`）。
 - `*.test.js`：API 測試檔。
 
-## API 路由總覽
+## REST API 路由總覽
 | 前綴 | 檔案 | 認證機制 | 說明 |
 |---|---|---|---|
 | `/api/auth` | `src/routes/authRoutes.js` | 部分需 JWT | 註冊、登入、取個人資料 |
 | `/api/products` | `src/routes/productRoutes.js` | 無 | 前台商品查詢 |
 | `/api/cart` | `src/routes/cartRoutes.js` | JWT 或 `X-Session-Id` | 訪客/會員購物車 |
-| `/api/orders` | `src/routes/orderRoutes.js` | JWT | 下單、查訂單、模擬付款 |
+| `/api/orders` | `src/routes/orderRoutes.js` | JWT | 下單、查訂單、付款發起/查詢、模擬付款 |
 | `/api/payments` | `src/routes/paymentRoutes.js` | 無（ECPay 呼叫） | 金流 callback 入口（本地端 no-op ACK） |
 | `/api/admin/products` | `src/routes/adminProductRoutes.js` | JWT + admin | 後台商品管理 |
 | `/api/admin/orders` | `src/routes/adminOrderRoutes.js` | JWT + admin | 後台訂單查詢 |
+
+## 頁面路由總覽
+| Path | 檔案 | 權限/前置 | 說明 |
+|---|---|---|---|
+| `/` | `src/routes/pageRoutes.js` | 無 | 首頁 |
+| `/products/:id` | `src/routes/pageRoutes.js` | 無 | 商品詳情頁 |
+| `/cart` | `src/routes/pageRoutes.js` | 無 | 購物車頁 |
+| `/checkout` | `src/routes/pageRoutes.js` | 前端需登入 | 結帳頁 |
+| `/login` | `src/routes/pageRoutes.js` | 無 | 登入/註冊頁 |
+| `/orders` | `src/routes/pageRoutes.js` | 前端需登入 | 我的訂單列表 |
+| `/orders/:id` | `src/routes/pageRoutes.js` | 前端需登入 | 訂單詳情與付款入口 |
+| `/admin/products` | `src/routes/pageRoutes.js` | 前端需 admin | 後台商品管理頁 |
+| `/admin/orders` | `src/routes/pageRoutes.js` | 前端需 admin | 後台訂單管理頁 |
 
 ## 統一回應格式
 成功：
