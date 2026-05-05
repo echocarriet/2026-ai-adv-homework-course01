@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 ### Added
+- 新增並版控 `.codex/config.toml` 與 `.codex/rules/default.rules`，統一專案的 Codex approval/sandbox 與規則設定。
 - 建立 `AGENTS.md`，補齊專案概述、常用指令、關鍵規則與 docs 索引。
 - 建立 `docs/README.md`，提供快速開始、技術棧、指令表、文件導覽。
 - 建立 `docs/ARCHITECTURE.md`，整理啟動流程、路由總覽、認證機制、資料流、DB schema 與金流現況。

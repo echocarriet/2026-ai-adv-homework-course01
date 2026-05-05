@@ -20,6 +20,13 @@
 4. `header-init.js`（front layout）
 5. page script
 
+## Codex 專案設定
+- 專案使用 `.codex/config.toml` 管理 Codex 執行策略，至少包含：
+  - `approval_policy`（目前為 `on-request`）
+  - `sandbox_mode`（目前為 `workspace-write`）
+  - `sandbox_workspace_write`（如 `network_access` 與 writable roots）
+- 專案規則放在 `.codex/rules/*.rules`，變更時需一併版控，避免團隊執行行為不一致。
+
 ## 新增 API 步驟（建議流程）
 1. 在對應 `src/routes/*` 新增路由與輸入驗證。
 2. 統一回傳 `{ data, error, message }`。
