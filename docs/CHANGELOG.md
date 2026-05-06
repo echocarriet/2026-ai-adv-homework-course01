@@ -16,10 +16,12 @@
 - 因本地端無法接收可公開回打的 Server Notify，付款確認改為由本地端主動呼叫 ECPay `QueryTradeInfo/V5`。
 - 調整訂單頁行為：改為「前往綠界付款」與「確認付款狀態」按鈕流程。
 - 訂單資料結構擴充付款欄位（`payment_provider`, `merchant_trade_no`, `payment_method`, `paid_at`, `payment_raw`）與 `merchant_trade_no` 唯一索引。
+- 補齊 `POST /api/payments/ecpay/notify` 業務邏輯：加入 `CheckMacValue` 驗章、成功付款時的訂單狀態更新，以及 webhook 重送冪等處理。
 
 ### Fixed
 - 修正綠界錯誤 `10300028`（訂單編號重覆）：
   - 同一筆 `pending` 訂單重試付款時，`payment/start` 每次都重新產生並保存新的 `MerchantTradeNo`，避免重覆送單失敗。
+- 補上 notify 失敗關鍵（J8）：不再是固定 `1|OK` no-op，改為可驗證、可更新、可重送的 callback 處理流程。
 
 ## [0.1.0] - 2026-04-28
 ### Added

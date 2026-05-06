@@ -48,6 +48,14 @@ function generateCheckMacValue(input, hashKey, hashIv) {
   return crypto.createHash('sha256').update(encoded).digest('hex').toUpperCase();
 }
 
+function verifyCheckMacValue(input) {
+  const { hashKey, hashIv } = getConfig();
+  const received = String(input.CheckMacValue || '').toUpperCase();
+  if (!received) return false;
+  const expected = generateCheckMacValue(input, hashKey, hashIv);
+  return expected === received;
+}
+
 function generateMerchantTradeNo() {
   const millis = Date.now().toString();
   const random = crypto.randomBytes(2).toString('hex').toUpperCase();
@@ -114,5 +122,7 @@ module.exports = {
   buildItemName,
   generateMerchantTradeNo,
   getCheckoutActionUrl,
+  generateCheckMacValue,
   queryTradeInfo,
+  verifyCheckMacValue,
 };

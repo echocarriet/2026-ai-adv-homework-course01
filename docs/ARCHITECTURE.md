@@ -34,7 +34,7 @@
 - `routes/productRoutes.js`：前台商品列表/詳情。
 - `routes/cartRoutes.js`：購物車（JWT / Session dual-mode）。
 - `routes/orderRoutes.js`：訂單建立/列表/詳情/模擬付款。
-- `routes/paymentRoutes.js`：ECPay callback 接收端（本地端回 `1|OK`）。
+- `routes/paymentRoutes.js`：ECPay callback 接收端（驗章、狀態更新、冪等 ACK）。
 - `services/ecpayService.js`：ECPay 欄位簽章、付款欄位組裝、交易查詢 API 封裝。
 - `routes/adminProductRoutes.js`：後台商品 CRUD。
 - `routes/adminOrderRoutes.js`：後台訂單查詢。
@@ -67,7 +67,7 @@
 | `/api/products` | `src/routes/productRoutes.js` | 無 | 前台商品查詢 |
 | `/api/cart` | `src/routes/cartRoutes.js` | JWT 或 `X-Session-Id` | 訪客/會員購物車 |
 | `/api/orders` | `src/routes/orderRoutes.js` | JWT | 下單、查訂單、付款發起/查詢、模擬付款 |
-| `/api/payments` | `src/routes/paymentRoutes.js` | 無（ECPay 呼叫） | 金流 callback 入口（本地端 no-op ACK） |
+| `/api/payments` | `src/routes/paymentRoutes.js` | 無（ECPay 呼叫） | 金流 callback 入口（含 CheckMac 驗證與冪等處理） |
 | `/api/admin/products` | `src/routes/adminProductRoutes.js` | JWT + admin | 後台商品管理 |
 | `/api/admin/orders` | `src/routes/adminOrderRoutes.js` | JWT + admin | 後台訂單查詢 |
 
@@ -161,10 +161,14 @@
    - `TradeStatus === 1`：更新訂單為 `paid`
    - 否則：保留 `pending`，僅更新查詢紀錄欄位
 
-### ECPay Server Notify（本地限制）
-- 因本專案僅本地運行，無法讓綠界直接回打可公開存取的伺服器。
-- `POST /api/payments/ecpay/notify` 目前僅回應 `1|OK`（no-op），不作為最終付款狀態依據。
-- 最終狀態以主動查詢 `QueryTradeInfo/V5` 結果為準。
+### ECPay Server Notify（callback）
+- Endpoint：`POST /api/payments/ecpay/notify`
+- 核心行為：
+  - 驗證 `CheckMacValue`，驗章失敗回 `400 text/plain`：`0|Invalid CheckMac`
+  - 驗章成功且對應到訂單時，若 `RtnCode='1'` 且 `TradeStatus='1'`，僅允許 `pending -> paid`
+  - 重複通知採冪等處理：已非 `pending` 不重複改狀態，仍回 `1|OK`
+  - `MerchantTradeNo` 找不到訂單時回 `200 text/plain`：`1|OK`（避免上游持續重送）
+- 備註：本地端仍可透過 `payment/verify` 主動查詢確認付款狀態，與 notify 互為補強。
 
 ### 後台管理
 前端 admin 頁在 layout 即先 `Auth.requireAdmin()`；後端路由再由 middleware 強制驗證，避免僅靠前端守衛。

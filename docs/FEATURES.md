@@ -11,7 +11,7 @@
 | 商品瀏覽 | ✅ 完成 | 分頁列表與商品詳情 |
 | 購物車（Dual-mode） | ✅ 完成 | JWT / Session 雙模式 |
 | 訂單 | ✅ 完成 | 建單、列表、詳情、狀態流轉 |
-| ECPay 金流整合 | ✅ 完成 | `payment/start` + `payment/verify` |
+| ECPay 金流整合 | ✅ 完成 | `payment/start` + `payment/verify` + `payments/ecpay/notify` |
 | 後台商品管理 | ✅ 完成 | CRUD + pending 訂單刪除保護 |
 | 後台訂單管理 | ✅ 完成 | 列表、篩選、詳情 |
 | 後續優化項目 | 🚧 進行中 | 目前無排程中的功能項目（保留此列供後續任務更新） |
@@ -239,7 +239,23 @@
   - `400 PAYMENT_NOT_STARTED`：尚未發起付款（無 `merchant_trade_no`）
   - `502 ECPAY_QUERY_FAILED`：查詢綠界失敗（網路或上游錯誤）
 
-### 8.3 模擬付款（開發輔助）
+### 8.3 ECPay Notify Callback（驗章 + 冪等）
+- Endpoint: `POST /api/payments/ecpay/notify`
+- 認證：無（由 ECPay 呼叫）
+- Content-Type：`application/x-www-form-urlencoded`
+- 必要欄位（至少）：`MerchantTradeNo`, `RtnCode`, `CheckMacValue`
+- 業務邏輯：
+  - 使用 HashKey/HashIV 驗證 `CheckMacValue`
+  - 若 `RtnCode === '1'` 且 `TradeStatus === '1'`：
+    - 僅當訂單狀態為 `pending` 時更新為 `paid`
+    - 同步寫入 `paid_at`, `payment_method`, `payment_raw`
+  - 若為重複通知（已非 `pending`），不重複改狀態（冪等）
+  - 若 `MerchantTradeNo` 查無訂單，直接 ACK 避免重送風暴
+- 回應：
+  - 成功/已處理/未知交易編號：`200 text/plain`，body `1|OK`
+  - 驗章失敗：`400 text/plain`，body `0|Invalid CheckMac`
+
+### 8.4 模擬付款（開發輔助）
 - Endpoint: `PATCH /api/orders/:id/pay`
 - Body 必填：`action`（`success` 或 `fail`）
 - 用途：保留給開發/測試流程，正式付款流程以綠界 `start + verify` 為主。

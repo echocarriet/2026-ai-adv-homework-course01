@@ -13,7 +13,7 @@
 | `tests/products.test.js` | 商品列表/詳情 | seed 商品 |
 | `tests/cart.test.js` | 訪客與會員購物車 | products API |
 | `tests/orders.test.js` | 訂單建立/查詢 | cart + auth |
-| `tests/ordersPayment.test.js` | ECPay 付款發起/主動查詢驗證 | orders + ECPay env |
+| `tests/ordersPayment.test.js` | ECPay 付款發起/主動查詢驗證/notify callback | orders + ECPay env |
 | `tests/adminProducts.test.js` | 後台商品 CRUD | admin token |
 | `tests/adminOrders.test.js` | 後台訂單查詢 | 先建立一般用戶訂單 |
 
@@ -73,6 +73,9 @@ it('should reject invalid quantity', async () => {
   - 不要誤以為會 fallback session。
 - 訂單付款狀態：只有 `pending` 可付款，重複付款要驗證 `INVALID_STATUS`。
 - ECPay 查單測試：`ordersPayment.test.js` 會 mock `global.fetch`，新增同類測試時記得在案例結束後還原 `global.fetch`。
+- ECPay notify 測試：
+  - 送出 form payload 前需先計算正確 `CheckMacValue`
+  - 至少覆蓋「驗章失敗」與「重複通知冪等」情境，避免 webhook regression。
 
 ## 執行指令
 ```bash
